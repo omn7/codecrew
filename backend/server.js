@@ -16,6 +16,7 @@ const PORT = 3001;
 const PYTHON_SCRIPT = path.join(__dirname, '../api.py');
 const SCHEDULE_FILE = path.join(__dirname, 'scheduled_tasks.json');
 const USERS_FILE = path.join(__dirname, 'users.json');
+const CONFIG_FILE = path.join(__dirname, 'config.json');
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 // Supabase setup
@@ -58,6 +59,19 @@ function saveUsers(users) {
     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
+function loadConfig() {
+    if (!fs.existsSync(CONFIG_FILE)) return { spotify_playlist_id: '37i9dQZF1DXcBWIGoYBM5M' };
+    try {
+        return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    } catch (e) {
+        return { spotify_playlist_id: '37i9dQZF1DXcBWIGoYBM5M' };
+    }
+}
+
+function saveConfig(config) {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
 function sendTelegramMessage(chatId, text) {
     const body = JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' });
     const options = {
@@ -98,6 +112,28 @@ setInterval(() => {
             task.reminded = true;
             changed = true;
             console.log(`[Reminder] Sent 20-min reminder for: ${task.title}`);
+        }
+
+        // Music Alarm Execution Logic
+        if (task.type === 'music' && !task.played) {
+            if (diffMin <= 0 && diffMin >= -2) {
+                const scriptPath = path.join(__dirname, '../play_spotify.py');
+                exec(`python "${scriptPath}"`, (err, stdout, stderr) => {
+                    if (err) console.error("[Spotify] Play failed", err);
+                });
+                
+                sendTelegramMessage(task.chat_id, "🎵 *Time to wake up/focus!* Playing your Spotify playlist now.");
+                
+                if (task.is_recurring) {
+                    const tomorrow = new Date(taskTime);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    task.scheduled_time = toLocalISOString(tomorrow);
+                    task.reminded = false;
+                } else {
+                    task.played = true;
+                }
+                changed = true;
+            }
         }
     });
 
@@ -146,6 +182,19 @@ app.post('/api/telegram/link', (req, res) => {
     }
 });
 
+app.get('/api/config', (req, res) => {
+    res.json(loadConfig());
+});
+
+app.post('/api/config', (req, res) => {
+    const { spotify_playlist_id } = req.body;
+    if (!spotify_playlist_id) return res.status(400).json({ error: 'spotify_playlist_id required' });
+    const config = loadConfig();
+    config.spotify_playlist_id = spotify_playlist_id;
+    saveConfig(config);
+    res.json({ status: 'success', config });
+});
+
 app.get('/api/telegram/status', (req, res) => {
     const { user_id } = req.query;
     if (!user_id) return res.status(400).json({ error: 'user_id required' });
@@ -175,6 +224,9 @@ app.post('/api/schedule', (req, res) => {
         id: `${Date.now()}-${i}`,
         title: t.title || 'Task',
         scheduled_time: t.scheduled_time,
+        type: t.type || 'task',
+        is_recurring: t.is_recurring || false,
+        played: false,
         chat_id: chat_id,
         reminded: false,
         created_at: new Date().toISOString()
@@ -230,6 +282,26 @@ app.post('/api/schedule/complete', async (req, res) => {
             .match({ title: title, status: 'pending', source: 'telegram' });
     } catch (e) {
         console.error("Supabase update error", e);
+    }
+
+    res.json({ status: 'success' });
+});
+
+// Cancel a scheduled task
+app.post('/api/schedule/cancel', async (req, res) => {
+    const { id, title } = req.body;
+    let tasks = loadSchedule();
+    
+    const newTasks = tasks.filter(t => t.id !== id);
+    saveSchedule(newTasks);
+
+    try {
+        await supabase
+            .from('tasks')
+            .update({ status: 'cancelled' })
+            .match({ title: title, status: 'pending' });
+    } catch (e) {
+        console.error("Supabase cancel error", e);
     }
 
     res.json({ status: 'success' });

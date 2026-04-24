@@ -8,14 +8,6 @@
     "created_at": "2026-04-24T11:14:13.166Z"
   },
   {
-    "id": "1777029253166-1",
-    "title": "coding session",
-    "scheduled_time": "2026-04-24T16:30:00.000Z",
-    "chat_id": "1559099691",
-    "reminded": false,
-    "created_at": "2026-04-24T11:14:13.166Z"
-  },
-  {
     "id": "1777029253166-2",
     "title": "code review",
     "scheduled_time": "2026-04-24T19:30:00.000Z",
@@ -30,5 +22,27 @@
     "chat_id": "1559099691",
     "reminded": false,
     "created_at": "2026-04-24T11:14:13.166Z"
+  },
+  {
+    "id": "1777032143736-0",
+    "title": "Spotify Playlist",
+    "scheduled_time": "2026-04-24T17:00:00",
+    "type": "music",
+    "is_recurring": false,
+    "played": false,
+    "chat_id": "1559099691",
+    "reminded": false,
+    "created_at": "2026-04-24T12:02:23.736Z"
+  },
+  {
+    "id": "1777032173855-0",
+    "title": "Spotify Playlist",
+    "scheduled_time": "2026-04-24T18:00:00",
+    "type": "music",
+    "is_recurring": false,
+    "played": false,
+    "chat_id": "1559099691",
+    "reminded": true,
+    "created_at": "2026-04-24T12:02:53.855Z"
   }
 ]

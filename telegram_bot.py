@@ -1,7 +1,8 @@
 import os
 import re
-import json
+import asyncio
 import logging
+import json
 import urllib.parse
 import httpx as http_client
 from datetime import datetime, timedelta
@@ -171,6 +172,19 @@ def local_intent_parser(user_input: str) -> dict:
         return {"skill": "generate_plan", "params": {"hours": 4, "priorities": ["Deep Work"]}}
     elif "pending" in text or "tasks" in text or ("schedule" in text and "reschedule" not in text):
         return {"skill": "show_tasks"}
+    elif "music" in text or "spotify" in text or "play" in text:
+        is_recurring = "everyday" in text or "every day" in text or "daily" in text
+        match = re.search(r'(\d{1,2})(?::\d{2})?\s*(am|pm|morning|evening|night)', text.lower())
+        dt_str = None
+        if match:
+            hour = int(match.group(1))
+            meridian = match.group(2)
+            if meridian in ['morning', 'am']: meridian = 'am'
+            elif meridian in ['evening', 'night', 'pm']: meridian = 'pm'
+            time_str = f"{hour}{meridian}"
+            dt_str = parse_time_str(time_str, datetime.now().strftime("%Y-%m-%d"))
+        if dt_str:
+            return {"skill": "schedule_music", "params": {"time": dt_str, "recurring": is_recurring}}
 
     return {
         "skill": "chat",
@@ -202,6 +216,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     5. 'setup_workspace': Needs "environment_type" (string, e.g., 'coding', 'writing').
     6. 'reschedule_task': Use when the user asks to reschedule, move, or delay a task. Needs "task_name" (string) and "new_time" (ISO 8601 string, YYYY-MM-DDTHH:MM:00, use today's date).
     7. 'show_tasks': Use when the user asks to see their tasks, schedule, or what is pending for the day. No params needed.
+    8. 'schedule_music': Use when the user asks to play music or start Spotify at a specific time. Needs "time" (ISO 8601 string, YYYY-MM-DDTHH:MM:00) and "recurring" (boolean).
 
     If the user provides a list/schedule of multiple tasks, use 'schedule_tasks'.
     If the user's intent matches one of the other skills, output the matching skill JSON.
@@ -317,6 +332,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
                 else:
                     await update.message.reply_text("⚠️ Could not fetch tasks right now.")
+            except Exception as e:
+                await update.message.reply_text(f"⚠️ Could not reach the backend: {e}")
+
+        elif data["skill"] == "schedule_music":
+            try:
+                task_time = data["params"]["time"]
+                is_recurring = data["params"].get("recurring", False)
+                title = "Daily Spotify Playlist" if is_recurring else "Spotify Playlist"
+                
+                resp = http_client.post(f"{BACKEND_URL}/api/schedule", json={
+                    "tasks": [{"title": title, "scheduled_time": task_time, "type": "music", "is_recurring": is_recurring}],
+                    "chat_id": str(chat_id)
+                }, timeout=5)
+                
+                if resp.status_code == 200:
+                    dt = datetime.fromisoformat(task_time)
+                    time_str = dt.strftime("%I:%M %p")
+                    freq = "every day" if is_recurring else "today"
+                    await update.message.reply_text(f"🎵 *Got it!* I will start your Spotify music at *{time_str}* {freq}.", parse_mode="Markdown")
+                else:
+                    await update.message.reply_text("⚠️ Failed to set music alarm.")
             except Exception as e:
                 await update.message.reply_text(f"⚠️ Could not reach the backend: {e}")
 

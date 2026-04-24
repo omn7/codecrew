@@ -47,6 +47,7 @@ function App() {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [activeTab, setActiveTab] = useState('Dashboard');
+  const [spotifyPlaylistId, setSpotifyPlaylistId] = useState('37i9dQZF1DXcBWIGoYBM5M');
   const [telegramStatus, setTelegramStatus] = useState({ isLinked: false, code: '' });
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -131,9 +132,31 @@ function App() {
     return () => { clearInterval(interval); clearInterval(schedInterval); };
   }, []);
 
+  // Fetch initial config
+  useEffect(() => {
+    fetch('http://localhost:3001/api/config')
+      .then(r => r.json())
+      .then(d => {
+        if (d.spotify_playlist_id) setSpotifyPlaylistId(d.spotify_playlist_id);
+      })
+      .catch(() => {});
+  }, []);
+
   const completeTask = async (taskId: string, taskTitle: string) => {
     try {
       await fetch('http://localhost:3001/api/schedule/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: taskId, title: taskTitle })
+      });
+      fetchScheduledTasks();
+      fetchTasks();
+    } catch (e) { console.error(e); }
+  };
+
+  const cancelTask = async (taskId: string, taskTitle: string) => {
+    try {
+      await fetch('http://localhost:3001/api/schedule/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: taskId, title: taskTitle })
@@ -322,6 +345,7 @@ function App() {
   const navItems = [
     { icon: '⌘', label: 'Dashboard' },
     { icon: '⚡', label: 'Tasks' },
+    { icon: '🎵', label: 'Music' },
   ];
 
   // Auth guard
@@ -588,13 +612,22 @@ function App() {
                               <span className="flex items-center gap-1"><span className="text-gray-600">◷</span> {taskTime.toLocaleDateString()} {taskTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                           </div>
-                          <button
-                            onClick={() => completeTask(task.id, task.title)}
-                            className="bg-[#00ff80]/10 hover:bg-[#00ff80]/20 text-[#00ff80] border border-[#00ff80]/30 rounded-md px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-2"
-                            title="Mark as Completed & Save to Database"
-                          >
-                            <span>✓</span> Complete
-                          </button>
+                          <div className="flex flex-col gap-2">
+                            <button
+                              onClick={() => completeTask(task.id, task.title)}
+                              className="bg-[#00ff80]/10 hover:bg-[#00ff80]/20 text-[#00ff80] border border-[#00ff80]/30 rounded-md px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-2"
+                              title="Mark as Completed"
+                            >
+                              <span>✓</span> Complete
+                            </button>
+                            <button
+                              onClick={() => cancelTask(task.id, task.title)}
+                              className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 rounded-md px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-2"
+                              title="Cancel Task"
+                            >
+                              <span>✕</span> Cancel
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -624,6 +657,78 @@ function App() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'Music' && (
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold text-white tracking-tight flex items-baseline gap-3 mb-6">
+                <span className="text-[#00e5ff] neon-glow-text">Music Station</span>
+              </h1>
+              
+              <div className="bg-[#0a0a0a] border border-gray-800 rounded-2xl p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+                <div className="flex flex-col lg:flex-row gap-8">
+                  {/* Player Embed */}
+                  <div className="flex-1">
+                    <iframe 
+                      src={`https://open.spotify.com/embed/playlist/${spotifyPlaylistId}?utm_source=generator&theme=0`} 
+                      width="100%" 
+                      height="380" 
+                      frameBorder="0" 
+                      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+                      loading="lazy"
+                      className="rounded-xl shadow-2xl"
+                    ></iframe>
+                  </div>
+
+                  {/* Settings */}
+                  <div className="w-full lg:w-[300px] space-y-6">
+                    <div className="bg-[#111] p-6 rounded-xl border border-gray-800">
+                      <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <span className="text-[#00e5ff]">⚙</span> Automation Control
+                      </h3>
+                      <p className="text-[11px] text-gray-500 mb-6 leading-relaxed">
+                        Update the Playlist ID to change both this player and your automatic wake-up music.
+                      </p>
+                      
+                      <div className="space-y-5">
+                        <div>
+                          <label className="text-[9px] text-gray-500 uppercase font-bold tracking-widest block mb-2">Playlist ID</label>
+                          <input 
+                            type="text" 
+                            value={spotifyPlaylistId}
+                            onChange={(e) => setSpotifyPlaylistId(e.target.value)}
+                            className="w-full bg-[#050505] border border-gray-800 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#00e5ff] transition-all font-mono"
+                            placeholder="e.g. 37i9dQZF1DXcBWIGoYBM5M"
+                          />
+                        </div>
+                        
+                        <button 
+                          onClick={async () => {
+                            try {
+                              const res = await fetch('http://localhost:3001/api/config', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ spotify_playlist_id: spotifyPlaylistId })
+                              });
+                              if (res.ok) alert('Spotify configuration updated!');
+                            } catch (e) { alert('Failed to update config.'); }
+                          }}
+                          className="w-full bg-[#00e5ff] hover:bg-[#00e5ff]/80 text-black font-bold py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(0,229,255,0.3)] text-sm uppercase tracking-widest"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-[#050505]/50 border border-dashed border-gray-800 rounded-xl">
+                      <p className="text-[10px] text-gray-600 leading-relaxed italic">
+                        Tip: Open a playlist on Spotify, click "..." → Share → Copy link. The ID is the characters after /playlist/
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
